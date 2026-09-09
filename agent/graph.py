@@ -1,18 +1,20 @@
 """Builds and compiles the LangGraph state graph.
 
-Flow (through Phase 9 — confidence scoring is added in Phase 10 and slots
-in between evaluate_evidence and grounding_gate):
+Full flow (Phase 10 — this is the complete pipeline):
 
     START -> validate_scope --[in scope]--> plan_research --> route_tools --> {retrieve_*} -> collect_evidence
                              --[out of scope]--> refuse_out_of_scope -> END
 
-    collect_evidence -> sanitize_content -> evaluate_evidence -> grounding_gate
+    collect_evidence -> sanitize_content -> evaluate_evidence -> calculate_confidence -> grounding_gate
         --[grounded]--> generate_answer -> validate_citations -> END
         --[not grounded]--> END (refusal set by the gate)
 
 sanitize_content scans every source for prompt-injection and unsafe-content
 patterns and redacts matches BEFORE relevance scoring or the answer LLM
-ever see the text — everything downstream of it only sees sanitized text.
+ever see the text. calculate_confidence computes the Evidence Confidence
+Score from evaluate_evidence's output; grounding_gate thresholds on that
+score (>=50, matching the documented "at least partially grounded" band)
+instead of raw relevance alone.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ def build_graph():
     graph.add_node("collect_evidence", nodes.collect_evidence)
     graph.add_node("sanitize_content", nodes.sanitize_content)
     graph.add_node("evaluate_evidence", nodes.evaluate_evidence)
+    graph.add_node("calculate_confidence", nodes.calculate_confidence)
     graph.add_node("grounding_gate", nodes.grounding_gate)
     graph.add_node("generate_answer", nodes.generate_answer)
     graph.add_node("validate_citations", nodes.validate_citations)
@@ -50,7 +53,8 @@ def build_graph():
 
     graph.add_edge("collect_evidence", "sanitize_content")
     graph.add_edge("sanitize_content", "evaluate_evidence")
-    graph.add_edge("evaluate_evidence", "grounding_gate")
+    graph.add_edge("evaluate_evidence", "calculate_confidence")
+    graph.add_edge("calculate_confidence", "grounding_gate")
     graph.add_conditional_edges("grounding_gate", router.gate_router)
     graph.add_edge("generate_answer", "validate_citations")
     graph.add_edge("validate_citations", END)

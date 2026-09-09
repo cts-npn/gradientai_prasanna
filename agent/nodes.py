@@ -14,6 +14,7 @@ from agent.prompts import (
 )
 from agent.state import AgentState, GeneratedAnswer, ResearchPlan, ScopeDecision
 from grounding.citations import validate_citations as check_citations
+from grounding.confidence import calculate_confidence as compute_confidence
 from grounding.evidence import evaluate_evidence as compute_evidence_evaluation
 from guardrails.injection import sanitize_injection
 from guardrails.safety import sanitize_safety
@@ -21,13 +22,10 @@ from tools.hackernews_tool import search_hackernews
 from tools.stackexchange_tool import search_stackexchange
 from tools.weather_tool import get_weather
 
-# Interim grounding-gate thresholds. Phase 10 replaces relevance_score here
-# with the full weighted Evidence Confidence Score and re-thresholds using
-# the documented 0-100 bands (>=50 = at least "partially grounded"); this
-# gate uses the same cutoff in the meantime rather than inventing a
-# different, undocumented number.
+# Grounding-gate thresholds, matching the documented Evidence Confidence
+# Score bands (grounding/confidence.py): below 50 = "insufficient".
 MIN_EVIDENCE_COUNT = 1
-MIN_RELEVANCE_SCORE = 30.0
+MIN_CONFIDENCE_SCORE = 50.0
 
 
 def validate_scope(state: AgentState) -> dict:
@@ -187,13 +185,40 @@ def evaluate_evidence(state: AgentState) -> dict:
     }
 
 
+def calculate_confidence(state: AgentState) -> dict:
+    """Compute the Evidence Confidence Score (grounding/confidence.py) —
+    the deterministic evidence-quality heuristic the grounding gate uses
+    to decide whether to proceed. Never asks the model how confident it
+    feels; every input is data already sitting in state.
+    """
+    result = compute_confidence(
+        sources=state.get("sources") or [],
+        plan=state.get("plan"),
+        relevance_score=state.get("relevance_score", 0.0),
+        per_source_relevance=state.get("per_source_relevance") or {},
+    )
+    breakdown = result["breakdown"]
+    breakdown_str = ", ".join(f"{k}={v:.0f}" for k, v in breakdown.items())
+    conflict_note = " ⚠️ Conflicting evidence detected." if result["conflict_detected"] else ""
+    return {
+        "confidence_score": result["confidence_score"],
+        "confidence_breakdown": breakdown,
+        "confidence_band": result["band"],
+        "conflict_detected": result["conflict_detected"],
+        "status_log": [
+            f"Evidence Confidence Score: {result['confidence_score']:.0f}/100 "
+            f"({result['band']}) — {breakdown_str}.{conflict_note}"
+        ],
+    }
+
+
 def grounding_gate(state: AgentState) -> dict:
     """Decide whether the agent may proceed toward an answer. Never lets a
     generation step run on insufficient evidence — this is the one place
     "I don't have enough evidence" gets enforced before any LLM synthesis.
     """
     count = state.get("evidence_count", 0)
-    relevance = state.get("relevance_score", 0.0)
+    confidence = state.get("confidence_score", 0.0)
 
     if count < MIN_EVIDENCE_COUNT:
         return {
@@ -205,19 +230,21 @@ def grounding_gate(state: AgentState) -> dict:
             "status_log": ["Grounding gate: FAILED (no evidence retrieved)."],
         }
 
-    if relevance < MIN_RELEVANCE_SCORE:
+    if confidence < MIN_CONFIDENCE_SCORE:
         return {
             "grounded": False,
             "refusal": (
                 "I found limited relevant evidence, so I don't have enough grounding to "
                 "provide a reliable answer."
             ),
-            "status_log": [f"Grounding gate: FAILED (relevance {relevance:.0f} < {MIN_RELEVANCE_SCORE:.0f})."],
+            "status_log": [
+                f"Grounding gate: FAILED (confidence {confidence:.0f} < {MIN_CONFIDENCE_SCORE:.0f})."
+            ],
         }
 
     return {
         "grounded": True,
-        "status_log": [f"Grounding gate: PASSED (relevance {relevance:.0f} >= {MIN_RELEVANCE_SCORE:.0f})."],
+        "status_log": [f"Grounding gate: PASSED (confidence {confidence:.0f} >= {MIN_CONFIDENCE_SCORE:.0f})."],
     }
 
 

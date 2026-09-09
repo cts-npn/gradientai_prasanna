@@ -57,21 +57,21 @@ def test_evaluate_evidence_mixes_relevant_and_irrelevant_social_sources():
 
 
 def test_grounding_gate_fails_with_zero_evidence():
-    state = {"evidence_count": 0, "relevance_score": 0.0}
+    state = {"evidence_count": 0, "confidence_score": 0.0}
     result = nodes.grounding_gate(state)
     assert result["grounded"] is False
     assert "sufficient grounded evidence" in result["refusal"]
 
 
-def test_grounding_gate_fails_with_low_relevance():
-    state = {"evidence_count": 3, "relevance_score": 5.0}
+def test_grounding_gate_fails_with_low_confidence():
+    state = {"evidence_count": 3, "confidence_score": 20.0}
     result = nodes.grounding_gate(state)
     assert result["grounded"] is False
     assert "limited relevant evidence" in result["refusal"]
 
 
-def test_grounding_gate_passes_with_sufficient_relevant_evidence():
-    state = {"evidence_count": 3, "relevance_score": 80.0}
+def test_grounding_gate_passes_with_sufficient_confidence():
+    state = {"evidence_count": 3, "confidence_score": 80.0}
     result = nodes.grounding_gate(state)
     assert result["grounded"] is True
     assert "refusal" not in result

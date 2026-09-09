@@ -82,6 +82,12 @@ class AgentState(TypedDict, total=False):
     evidence_count: int
     relevance_score: float
     per_source_relevance: dict
+
+    confidence_score: float
+    confidence_breakdown: dict
+    confidence_band: str
+    conflict_detected: bool
+
     grounded: bool
 
     draft_answer: str
