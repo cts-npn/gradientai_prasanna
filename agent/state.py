@@ -75,6 +75,10 @@ class AgentState(TypedDict, total=False):
 
     sources: List[dict]
 
+    injection_detected: bool
+    injection_flagged_ids: List[str]
+    safety_flags: dict
+
     evidence_count: int
     relevance_score: float
     per_source_relevance: dict

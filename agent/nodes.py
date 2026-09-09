@@ -15,6 +15,8 @@ from agent.prompts import (
 from agent.state import AgentState, GeneratedAnswer, ResearchPlan, ScopeDecision
 from grounding.citations import validate_citations as check_citations
 from grounding.evidence import evaluate_evidence as compute_evidence_evaluation
+from guardrails.injection import sanitize_injection
+from guardrails.safety import sanitize_safety
 from tools.hackernews_tool import search_hackernews
 from tools.stackexchange_tool import search_stackexchange
 from tools.weather_tool import get_weather
@@ -116,6 +118,55 @@ def collect_evidence(state: AgentState) -> dict:
         sources.append({"id": f"E{counter}", **weather.to_dict()})
         counter += 1
     return {"sources": sources, "status_log": [f"Collected {len(sources)} source(s) for grounding."]}
+
+
+def sanitize_content(state: AgentState) -> dict:
+    """Scan every retrieved source's title/text for prompt-injection and
+    unsafe-content patterns BEFORE anything downstream (relevance scoring,
+    the grounding gate, or the answer LLM) sees it. Matched spans are
+    redacted in place; nothing downstream ever sees the raw matched text.
+    """
+    sources = state.get("sources") or []
+    sanitized: list = []
+    injection_ids: list = []
+    safety_map: dict = {}
+
+    for source in sources:
+        clean_source = dict(source)
+        for field in ("title", "text"):
+            value = clean_source.get(field)
+            if not isinstance(value, str):
+                continue
+            after_injection, was_injected = sanitize_injection(value)
+            after_safety, safety_flags = sanitize_safety(after_injection)
+            clean_source[field] = after_safety
+            if was_injected:
+                injection_ids.append(clean_source["id"])
+            if safety_flags:
+                safety_map.setdefault(clean_source["id"], []).extend(safety_flags)
+        sanitized.append(clean_source)
+
+    log = []
+    if injection_ids:
+        log.append(
+            f"🛡️ Prompt injection attempt detected in retrieved content ({', '.join(injection_ids)}) "
+            "— treated as untrusted data and redacted, not followed as an instruction."
+        )
+    else:
+        log.append("Injection scan: clean.")
+
+    if safety_map:
+        log.append(f"⚠️ Unsafe content filtered from source(s): {', '.join(safety_map.keys())}.")
+    else:
+        log.append("Safety scan: clean.")
+
+    return {
+        "sources": sanitized,
+        "injection_detected": bool(injection_ids),
+        "injection_flagged_ids": sorted(set(injection_ids)),
+        "safety_flags": safety_map,
+        "status_log": log,
+    }
 
 
 def evaluate_evidence(state: AgentState) -> dict:
