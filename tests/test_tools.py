@@ -2,7 +2,7 @@
 
 import pytest
 
-from tools import hackernews_tool, stackexchange_tool, weather_tool
+from tools import hackernews_tool, reddit_tool, stackexchange_tool, weather_tool
 from tools.tool_utils import ToolRequestError, ttl_cache
 
 
@@ -119,3 +119,20 @@ def test_weather_live_lookup_returns_real_data():
     assert result.temperature_c is not None
     assert result.condition and "Unknown" not in result.condition
     assert result.source_url.startswith("https://api.open-meteo.com/v1/forecast?")
+
+
+def test_reddit_returns_empty_list_when_not_configured(monkeypatch):
+    from config.settings import settings as live_settings
+
+    assert live_settings.reddit_enabled is False  # true by default in this project's env
+    reddit_tool.search_reddit.cache_clear()
+    assert reddit_tool.search_reddit("electric vehicles") == []
+
+
+def test_reddit_empty_query_returns_empty_list():
+    assert reddit_tool.search_reddit("") == []
+    assert reddit_tool.search_reddit("   ") == []
+
+
+def test_reddit_get_client_returns_none_when_disabled():
+    assert reddit_tool._get_client() is None
