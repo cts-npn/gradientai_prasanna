@@ -34,18 +34,22 @@ def http_get(url: str, *, params: dict | None = None, headers: dict | None = Non
         raise ToolRequestError(f"Request to {url} returned invalid JSON: {exc}") from exc
 
 
-def cache_key(*args: Any, **kwargs: Any) -> str:
-    return str(args) + str(sorted(kwargs.items()))
-
-
 def ttl_cache(func):
     """Decorator: cache a tool function's results for 5 minutes.
 
     Keeps repeated identical queries within one session (or across a few
     users hitting the same demo question) from re-hitting rate-limited
-    free APIs.
+    free APIs. `_http_cache` is one shared cache across every decorated
+    function, so the key includes the function's identity — otherwise two
+    different tools called with an equal argument (e.g. both passed the
+    same city name) would collide and return each other's cached results.
     """
-    return cached(cache=_http_cache, key=cache_key)(func)
+    func_id = f"{func.__module__}.{func.__qualname__}"
+
+    def _key(*args: Any, **kwargs: Any) -> tuple:
+        return (func_id, args, frozenset(kwargs.items()))
+
+    return cached(cache=_http_cache, key=_key)(func)
 
 
 def now_iso() -> str:

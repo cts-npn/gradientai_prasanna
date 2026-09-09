@@ -2,8 +2,26 @@
 
 import pytest
 
-from tools import hackernews_tool, stackexchange_tool
-from tools.tool_utils import ToolRequestError
+from tools import hackernews_tool, stackexchange_tool, weather_tool
+from tools.tool_utils import ToolRequestError, ttl_cache
+
+
+def test_ttl_cache_does_not_collide_across_different_functions():
+    calls = {"a": 0, "b": 0}
+
+    @ttl_cache
+    def tool_a(x):
+        calls["a"] += 1
+        return f"a-result-{x}"
+
+    @ttl_cache
+    def tool_b(x):
+        calls["b"] += 1
+        return f"b-result-{x}"
+
+    assert tool_a("same-arg") == "a-result-same-arg"
+    assert tool_b("same-arg") == "b-result-same-arg"
+    assert calls == {"a": 1, "b": 1}
 
 
 def test_hackernews_empty_query_returns_empty_list():
@@ -67,3 +85,37 @@ def test_stackexchange_builds_correct_urls_for_custom_and_standard_domains():
         stackexchange_tool._question_url("sustainability", 9)
         == "https://sustainability.stackexchange.com/questions/9"
     )
+
+
+def test_weather_empty_city_returns_none():
+    assert weather_tool.get_weather("") is None
+    assert weather_tool.get_weather("   ") is None
+
+
+def test_weather_unresolvable_city_returns_none():
+    weather_tool.get_weather.cache_clear()
+    weather_tool._geocode.cache_clear()
+    result = weather_tool.get_weather("zzzznotarealplaceqxqxqx123")
+    assert result is None
+
+
+def test_weather_geocode_failure_returns_none(monkeypatch):
+    def boom(*args, **kwargs):
+        raise ToolRequestError("simulated network failure")
+
+    monkeypatch.setattr(weather_tool, "http_get", boom)
+    weather_tool.get_weather.cache_clear()
+    weather_tool._geocode.cache_clear()
+    assert weather_tool.get_weather("Chennai") is None
+
+
+def test_weather_live_lookup_returns_real_data():
+    weather_tool.get_weather.cache_clear()
+    result = weather_tool.get_weather("Chennai")
+    assert result is not None
+    assert result.resolved_name
+    assert -90 <= result.latitude <= 90
+    assert -180 <= result.longitude <= 180
+    assert result.temperature_c is not None
+    assert result.condition and "Unknown" not in result.condition
+    assert result.source_url.startswith("https://api.open-meteo.com/v1/forecast?")
