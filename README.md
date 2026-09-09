@@ -77,7 +77,10 @@ Every node above is a real, separately traced step in the compiled LangGraph gra
 
 This project originally targeted `llama-3.3-70b-versatile`, but that model was removed from Groq's lineup during development (confirmed via a live `/models` query, which returned a 404 for it). Qwen was picked from the models Groq currently serves because it's explicitly in the project's approved open-weight family list and is genuinely available. The model is used for: scope validation, research planning, and answer synthesis — never for citation validation or the confidence score, both of which are deterministic Python.
 
-**A real limit we hit and fixed:** Groq's free tier enforces an output-tokens-*per-minute* cap (1000 for this model), and it counts the *requested* `max_tokens` ceiling against that cap, not actual usage. With `max_tokens` unset, every request defaulted high enough to get rejected outright — even though real answers here run under 150 tokens. Fixed by capping `max_tokens=600` in `agent/llm.py`.
+**Two real rate-limit issues we hit and fixed:**
+
+1. Groq's free tier enforces an output-tokens-*per-minute* cap (1000 for this model), and it counts the *requested* `max_tokens` ceiling against that cap, not actual usage. With `max_tokens` unset, every request defaulted high enough to get rejected outright — even though real answers here run under 150 tokens. Fixed by capping `max_tokens=600` in `agent/llm.py`.
+2. This Qwen3 checkpoint emits a verbose hidden chain-of-thought preamble by default (`<think>...</think>`) unless told not to — confirmed via a raw API call: an identical request went from a large completion down to 2 output tokens once disabled. That hidden reasoning, multiplied across every LLM call made during a full day of development and testing, is almost certainly what exhausted the free tier's 200,000-tokens/day cap for this model in a single day of *building* the project — not from realistic per-question usage. Fixed by setting `reasoning_effort="none"` in `agent/llm.py`, a genuine efficiency fix rather than a workaround for that one incident.
 
 ## Tools
 
@@ -227,7 +230,7 @@ Also covered: tool-level error handling (`test_tools.py`), confidence-formula ca
 - **Reddit's tool module is implemented and unit-tested but not wired into the router**, pending OAuth app review (see Tools section above). The live demo runs entirely on Hacker News + Stack Exchange.
 - **Safety/injection filtering is pattern-based**, not a trained classifier — a sufficiently rephrased attack could evade the fixed pattern list.
 - **Conflict detection is a bag-of-words sentiment check**, not real argument-level contradiction detection — it catches sources that clearly disagree in tone, not subtle factual conflicts.
-- **Groq's free tier has real, tight rate limits** (observed: ~1000 output tokens/minute for this model). The app is usable for a demo/interview pace of questions but would need a paid tier for production traffic.
+- **Groq's free tier has real, tight rate limits**: ~1000 output tokens/minute, and 200,000 tokens/day for this model. A full day of building and testing this project (dozens of live LLM calls per test-suite run, run repeatedly) exhausted the daily cap once, before the hidden-reasoning-tokens fix above was in place — the app correctly showed a graceful error rather than crashing or fabricating an answer. Post-fix, the app is comfortably usable for a demo/interview pace of questions; sustained production traffic would need a paid tier.
 - **Stack Exchange's `/search/excerpts` endpoint doesn't return question authors**, so Stack Exchange sources show no author attribution (a real API limitation, worked around by building URLs from Stack Exchange's own site-to-domain mapping rather than a missing `link` field — not by inventing data).
 
 ## Cost

@@ -47,4 +47,14 @@ def get_llm(temperature: float = 0.0) -> ChatGroq:
         # enough to get rejected outright ("Request too large") even though
         # real answers here run under 150 tokens. Capped well under the limit.
         max_tokens=600,
+        # This Qwen3 checkpoint emits a verbose hidden chain-of-thought
+        # preamble by default (wrapped in <think>...</think>) unless told
+        # not to — confirmed via a raw API call: identical request went from
+        # a large completion down to 2 tokens with this set. That hidden
+        # reasoning, multiplied across every call this project made during
+        # development and testing, is almost certainly what exhausted the
+        # free tier's 200k-tokens/day cap for this model in a single day of
+        # building — not real per-question usage. Disabling it is a real
+        # efficiency fix, not just a workaround for today's outage.
+        reasoning_effort="none",
     )
