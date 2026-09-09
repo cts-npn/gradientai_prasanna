@@ -70,3 +70,16 @@ def get_graph():
     if _compiled_graph is None:
         _compiled_graph = build_graph()
     return _compiled_graph
+
+
+def run_agent(question: str) -> AgentState:
+    """Single entry point for invoking the compiled graph — used by the UI
+    (Phase 12) and can be used by tests alike, so every run gets a readable
+    LangSmith trace name (by question) instead of the generic "LangGraph"
+    default, without every call site needing to remember the config.
+    """
+    run_name = f"query: {question[:60]}" if question else "query"
+    return get_graph().invoke(
+        {"question": question, "status_log": []},
+        config={"run_name": run_name},
+    )
