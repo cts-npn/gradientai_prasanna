@@ -2,6 +2,7 @@ langgraph==0.6.11
 langgraph-checkpoint==2.1.2
 langgraph-prebuilt==0.6.5
 langgraph-sdk==0.2.9
+pydantic==2.13.5
 langchain-core==0.3.86
 langchain-groq==0.3.8
 langsmith==0.4.37
