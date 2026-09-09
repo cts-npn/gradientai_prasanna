@@ -6,8 +6,14 @@ LangGraph node contract (a node never mutates state in place).
 from __future__ import annotations
 
 from agent.llm import get_llm
-from agent.prompts import PLAN_SYSTEM_PROMPT, SCOPE_SYSTEM_PROMPT
-from agent.state import AgentState, ResearchPlan, ScopeDecision
+from agent.prompts import (
+    ANSWER_SYSTEM_PROMPT,
+    PLAN_SYSTEM_PROMPT,
+    SCOPE_SYSTEM_PROMPT,
+    format_evidence_block,
+)
+from agent.state import AgentState, GeneratedAnswer, ResearchPlan, ScopeDecision
+from grounding.citations import validate_citations as check_citations
 from grounding.evidence import evaluate_evidence as compute_evidence_evaluation
 from tools.hackernews_tool import search_hackernews
 from tools.stackexchange_tool import search_stackexchange
@@ -164,8 +170,46 @@ def grounding_gate(state: AgentState) -> dict:
     }
 
 
-def awaiting_answer_generation(state: AgentState) -> dict:
-    """Temporary terminal node for the grounded path. Phase 8 replaces this
-    with real LLM answer synthesis + citation validation.
+def generate_answer(state: AgentState) -> dict:
+    """Synthesize an answer strictly from the collected evidence. Only
+    reached after the grounding gate has passed, so `sources` is guaranteed
+    non-empty here.
     """
-    return {"status_log": ["Grounding passed — evidence ready for answer generation (Phase 8)."]}
+    sources = state["sources"]
+    evidence_block = format_evidence_block(sources)
+    llm = get_llm()
+    result: GeneratedAnswer = llm.with_structured_output(GeneratedAnswer).invoke(
+        [
+            ("system", ANSWER_SYSTEM_PROMPT),
+            ("human", f"Question: {state['question']}\n\n{evidence_block}"),
+        ]
+    )
+    return {
+        "draft_answer": result.answer,
+        "status_log": [f"Answer drafted, citing {len(result.citations_used)} source(s)."],
+    }
+
+
+def validate_citations(state: AgentState) -> dict:
+    """Deterministic check (grounding/citations.py): every [E#] the model
+    cited must exist in the source registry actually populated this run.
+    A fabricated citation fails the run rather than being silently shown.
+    """
+    validation = check_citations(state["draft_answer"], state["sources"])
+    if not validation["valid"]:
+        return {
+            "citation_validation_passed": False,
+            "final_answer": None,
+            "refusal": (
+                "I drafted an answer but it referenced a source that wasn't actually "
+                "retrieved in this run, so I'm withholding it rather than show an "
+                "unverifiable citation."
+            ),
+            "status_log": [f"Citation validation FAILED — fabricated id(s): {validation['fabricated_ids']}"],
+        }
+    return {
+        "citation_validation_passed": True,
+        "cited_source_ids": validation["used_source_ids"],
+        "final_answer": state["draft_answer"],
+        "status_log": [f"Citation validation passed — {len(validation['used_source_ids'])} source(s) cited."],
+    }

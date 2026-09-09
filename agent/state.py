@@ -42,6 +42,15 @@ class ResearchPlan(BaseModel):
     reasoning: str = Field(description="One or two sentences explaining the plan")
 
 
+class GeneratedAnswer(BaseModel):
+    """Output of the answer-synthesis LLM call."""
+
+    answer: str = Field(description="The answer text, with inline [E#] citations for every factual claim")
+    citations_used: List[str] = Field(
+        default_factory=list, description="Every citation id (e.g. 'E1') actually used in the answer"
+    )
+
+
 class AgentState(TypedDict, total=False):
     """The graph's shared state. Nodes read and write slices of this dict;
     LangGraph merges each node's returned partial dict into the running
@@ -70,5 +79,10 @@ class AgentState(TypedDict, total=False):
     relevance_score: float
     per_source_relevance: dict
     grounded: bool
+
+    draft_answer: str
+    citation_validation_passed: bool
+    cited_source_ids: List[str]
+    final_answer: Optional[str]
 
     refusal: Optional[str]

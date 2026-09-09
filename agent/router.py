@@ -39,4 +39,4 @@ def gate_router(state: AgentState) -> str:
     when it fails, so the failing path here goes straight to END rather
     than a separate refusal node.
     """
-    return "awaiting_answer_generation" if state.get("grounded") else END
+    return "generate_answer" if state.get("grounded") else END

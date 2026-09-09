@@ -25,6 +25,9 @@ def test_weather_only_question_routes_to_weather_alone():
     assert plan.needs_stackexchange is False
     assert result["weather_result"] is not None
     assert not result.get("refusal")
+    assert result["citation_validation_passed"] is True
+    assert result["final_answer"]
+    assert result["cited_source_ids"] == ["E1"]  # only source available is E1
 
 
 def test_social_opinion_question_routes_to_hackernews():
