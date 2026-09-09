@@ -41,4 +41,10 @@ def get_llm(temperature: float = 0.0) -> ChatGroq:
         temperature=temperature,
         timeout=30,
         max_retries=2,
+        # Groq's free tier enforces an output-tokens-PER-MINUTE cap (observed
+        # at 1000 for this model) and counts the REQUESTED max_tokens ceiling
+        # against it, not actual usage — an unset max_tokens defaults high
+        # enough to get rejected outright ("Request too large") even though
+        # real answers here run under 150 tokens. Capped well under the limit.
+        max_tokens=600,
     )
