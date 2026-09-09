@@ -65,4 +65,10 @@ class AgentState(TypedDict, total=False):
     weather_result: Optional[WeatherResult]
 
     sources: List[dict]
+
+    evidence_count: int
+    relevance_score: float
+    per_source_relevance: dict
+    grounded: bool
+
     refusal: Optional[str]

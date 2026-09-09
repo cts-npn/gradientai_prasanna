@@ -8,9 +8,18 @@ from __future__ import annotations
 from agent.llm import get_llm
 from agent.prompts import PLAN_SYSTEM_PROMPT, SCOPE_SYSTEM_PROMPT
 from agent.state import AgentState, ResearchPlan, ScopeDecision
+from grounding.evidence import evaluate_evidence as compute_evidence_evaluation
 from tools.hackernews_tool import search_hackernews
 from tools.stackexchange_tool import search_stackexchange
 from tools.weather_tool import get_weather
+
+# Interim grounding-gate thresholds. Phase 10 replaces relevance_score here
+# with the full weighted Evidence Confidence Score and re-thresholds using
+# the documented 0-100 bands (>=50 = at least "partially grounded"); this
+# gate uses the same cutoff in the meantime rather than inventing a
+# different, undocumented number.
+MIN_EVIDENCE_COUNT = 1
+MIN_RELEVANCE_SCORE = 30.0
 
 
 def validate_scope(state: AgentState) -> dict:
@@ -101,3 +110,62 @@ def collect_evidence(state: AgentState) -> dict:
         sources.append({"id": f"E{counter}", **weather.to_dict()})
         counter += 1
     return {"sources": sources, "status_log": [f"Collected {len(sources)} source(s) for grounding."]}
+
+
+def evaluate_evidence(state: AgentState) -> dict:
+    """Score retrieved evidence for relevance before any answer is attempted.
+    Pure deterministic computation — see grounding/evidence.py.
+    """
+    plan = state.get("plan")
+    search_query = plan.search_query if plan else ""
+    evaluation = compute_evidence_evaluation(state["question"], search_query, state.get("sources") or [])
+    return {
+        "evidence_count": evaluation["evidence_count"],
+        "relevance_score": evaluation["relevance_score"],
+        "per_source_relevance": evaluation["per_source_relevance"],
+        "status_log": [
+            f"Evidence evaluated: {evaluation['evidence_count']} source(s), "
+            f"relevance {evaluation['relevance_score']:.0f}/100."
+        ],
+    }
+
+
+def grounding_gate(state: AgentState) -> dict:
+    """Decide whether the agent may proceed toward an answer. Never lets a
+    generation step run on insufficient evidence — this is the one place
+    "I don't have enough evidence" gets enforced before any LLM synthesis.
+    """
+    count = state.get("evidence_count", 0)
+    relevance = state.get("relevance_score", 0.0)
+
+    if count < MIN_EVIDENCE_COUNT:
+        return {
+            "grounded": False,
+            "refusal": (
+                "I don't have sufficient grounded evidence from my available sources to "
+                "answer this reliably."
+            ),
+            "status_log": ["Grounding gate: FAILED (no evidence retrieved)."],
+        }
+
+    if relevance < MIN_RELEVANCE_SCORE:
+        return {
+            "grounded": False,
+            "refusal": (
+                "I found limited relevant evidence, so I don't have enough grounding to "
+                "provide a reliable answer."
+            ),
+            "status_log": [f"Grounding gate: FAILED (relevance {relevance:.0f} < {MIN_RELEVANCE_SCORE:.0f})."],
+        }
+
+    return {
+        "grounded": True,
+        "status_log": [f"Grounding gate: PASSED (relevance {relevance:.0f} >= {MIN_RELEVANCE_SCORE:.0f})."],
+    }
+
+
+def awaiting_answer_generation(state: AgentState) -> dict:
+    """Temporary terminal node for the grounded path. Phase 8 replaces this
+    with real LLM answer synthesis + citation validation.
+    """
+    return {"status_log": ["Grounding passed — evidence ready for answer generation (Phase 8)."]}

@@ -55,3 +55,12 @@ def test_out_of_scope_question_is_refused_without_calling_tools():
     assert not result.get("se_results")
     assert result.get("weather_result") is None
     assert "plan" not in result
+
+
+def test_in_scope_question_with_no_matching_evidence_is_refused_by_grounding_gate():
+    # A fictional, specific enough product that HN/SE genuinely return nothing.
+    result = _run("What do people think about the Zeltrix Q9 folding phone hinge durability in humid climates")
+    assert result["in_scope"] is True
+    assert result["grounded"] is False
+    assert result.get("refusal")
+    assert result["evidence_count"] == 0

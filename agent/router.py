@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import List
 
+from langgraph.graph import END
+
 from agent.state import AgentState
 
 
@@ -30,3 +32,11 @@ def tool_router(state: AgentState) -> List[str]:
     if plan.needs_weather:
         targets.append("retrieve_weather")
     return targets or ["collect_evidence"]
+
+
+def gate_router(state: AgentState) -> str:
+    """The grounding gate node already writes the refusal message itself
+    when it fails, so the failing path here goes straight to END rather
+    than a separate refusal node.
+    """
+    return "awaiting_answer_generation" if state.get("grounded") else END
