@@ -23,7 +23,7 @@ def _env(name: str, default: str = "") -> str:
 class Settings:
     # LLM
     model_provider: str = field(default_factory=lambda: _env("MODEL_PROVIDER", "groq"))
-    model_name: str = field(default_factory=lambda: _env("MODEL_NAME", "llama-3.3-70b-versatile"))
+    model_name: str = field(default_factory=lambda: _env("MODEL_NAME", "qwen/qwen3.8-27b"))
     groq_api_key: str = field(default_factory=lambda: _env("GROQ_API_KEY"))
 
     # Reddit — only enabled when all three values are present. Reddit closed
